@@ -1,14 +1,11 @@
 # Python
 __pycache__/
 *.py[cod]
-*.pyo
 
 # Virtual environment
 .venv/
-venv/
-env/
 
-# Environment variables / secrets
+# Environment variables and secrets
 .env
 .env.*
 !.env.example
@@ -33,7 +30,7 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
-# Local database
+# Local databases
 *.db
 *.sqlite
 *.sqlite3
