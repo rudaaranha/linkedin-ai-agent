@@ -9,7 +9,7 @@ def test_root():
     assert response.status_code == 200
     assert response.json() == {
         "status": "ok",
-        "service": "linkedin-ai-agent",
+        "service": "LinkedIn AI Agent",
     }
 
 def test_health():

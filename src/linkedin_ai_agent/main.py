@@ -1,7 +1,9 @@
 from fastapi import FastAPI
 
+from linkedin_ai_agent.core.config import settings
+
 app = FastAPI(
-    title="Linkedin AI Agent",
+    title=settings.app_name,
     description="AI-powered Linkedin content automation pipeline",
     version="0.1.0",
 )
@@ -11,7 +13,7 @@ app = FastAPI(
 def root():
     return {
         "status": "ok",
-        "service": "linkedin-ai-agent",
+        "service": settings.app_name,
     }
 
 
