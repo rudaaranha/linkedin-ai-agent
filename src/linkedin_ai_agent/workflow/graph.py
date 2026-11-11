@@ -1,6 +1,8 @@
 from uuid import uuid4
 
+from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
+from langgraph.types import interrupt
 
 from linkedin_ai_agent.workflow.state import PostState
 
@@ -76,11 +78,68 @@ def build_graph():
     workflow.add_node("ranking", ranking_node)
     workflow.add_node("writer", writer_node)
     workflow.add_node("reviewer", reviewer_node)
+    workflow.add_node("human_approval", human_approval_node)
+    workflow.add_node("publisher", publisher_node)
 
     workflow.add_edge(START, "research")
     workflow.add_edge("research", "ranking")
     workflow.add_edge("ranking", "writer")
     workflow.add_edge("writer", "reviewer")
-    workflow.add_edge("reviewer", END)
+    workflow.add_edge("reviewer", "human_approval")
 
-    return workflow.compile()
+    workflow.add_conditional_edges(
+        "human_approval",
+        approval_router,
+        {
+            "publisher": "publisher",
+            "end": END,
+        },
+    )
+
+    workflow.add_edge("publisher", END)
+
+    checkpointer = InMemorySaver()
+
+    return workflow.compile(
+        checkpointer=checkpointer,
+    )
+
+
+def human_approval_node(state: PostState) -> dict:
+    """Pause the workflow and request human approval."""
+
+    decision = interrupt(
+        {
+            "type": "content_approval",
+            "question": "Do you approve this post for publication?",
+            "draft": state["draft"],
+        }
+    )
+    return {
+        "approval": decision,
+    }
+
+
+def publisher_node(state: PostState) -> dict:
+    """Simulate publication."""
+
+    return {
+        "publication": {
+            "published": True,
+            "platform": "linkedin",
+        }
+    }
+
+
+def approval_router(state: PostState) -> str:
+    """Route the workflow according to human approval."""
+
+    approval = state["approval"]
+
+    if approval is None:
+        return "end"
+
+    if approval.get("approved") is True:
+        return "publisher"
+
+    return "end"
