@@ -1,4 +1,4 @@
-from enum import Enum
+from enum import Enum, StrEnum
 
 
 class ContentType(str, Enum):
@@ -49,3 +49,9 @@ class AuditAction(str, Enum):
     CONTENT_APPROVED = "content_approved"
     CONTENT_REJECTED = "content_rejected"
     CONTENT_PUBLISHED = "content_published"
+
+
+class ApprovalDecision(StrEnum):
+    APPROVE = "approve"
+    REGENERATE = "regenerate"
+    REJECT = "reject"

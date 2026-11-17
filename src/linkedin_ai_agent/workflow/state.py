@@ -1,7 +1,12 @@
 from typing import Any, TypedDict
 from uuid import UUID
 
-from linkedin_ai_agent.domain.enums import ContentType
+from linkedin_ai_agent.domain.enums import ApprovalDecision, ContentType
+
+
+class HumanApproval(TypedDict):
+    decision: ApprovalDecision
+    feedback: str | None
 
 
 class PostState(TypedDict):
@@ -17,12 +22,15 @@ class PostState(TypedDict):
 
     draft: str | None
 
+    revision_feedback: str | None
+    regeneration_count: int
+
     review: dict[str, Any] | None
 
     visual_strategy: str | None
     selected_image_id: UUID | None
     generated_image: str | None
 
-    approval: dict[str, Any] | None
+    approval: HumanApproval | None
 
     publication: dict[str, Any] | None

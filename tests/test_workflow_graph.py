@@ -2,8 +2,12 @@ from uuid import uuid4
 
 from langgraph.types import Command
 
-from linkedin_ai_agent.domain.enums import ContentType
-from linkedin_ai_agent.workflow.graph import approval_router, build_graph
+from linkedin_ai_agent.domain.enums import ApprovalDecision, ContentType
+from linkedin_ai_agent.workflow.graph import (
+    approval_router, 
+    build_graph, 
+    prepare_regeneration_node,
+)
 
 
 def make_initial_state():
@@ -15,6 +19,8 @@ def make_initial_state():
         "research_results": [],
         "selected_story_id": None,
         "draft": None,
+        "revision_feedback": None,
+        "regeneration_count": 0,
         "review": None,
         "visual_strategy": None,
         "selected_image_id": None,
@@ -103,14 +109,14 @@ def test_graph_publishes_after_human_approval():
     result = graph.invoke(
         Command(
             resume={
-                "approved": True,
-                "reason": "Approved by user"
+                "decision": ApprovalDecision.APPROVE,
+                "feedback": None,
             }
         ),
         config=config,
     )
 
-    assert result["approval"]["approved"] is True
+    assert result["approval"]["decision"] == ApprovalDecision.APPROVE
     assert result["publication"]["published"] is True
 
 
@@ -118,7 +124,8 @@ def test_approval_router_sends_approved_content_to_publisher():
     state = make_initial_state()
 
     state["approval"] = {
-        "approved": True,
+        "decision": ApprovalDecision.APPROVE,
+        "feedback": None,
     }
 
     assert approval_router(state) == "publisher"
@@ -128,10 +135,22 @@ def test_approval_router_sends_rejected_content_back_to_end():
     state = make_initial_state()
 
     state["approval"] = {
-        "approved": False,
+        "decision": ApprovalDecision.REJECT,
+        "feedback": "O assunto não é relevante."
     }
 
     assert approval_router(state) == "end"
+
+
+def test_approval_router_sends_regeneration_to_prepare_node():
+    state = make_initial_state()
+
+    state["approval"] = {
+        "decision": ApprovalDecision.REGENERATE,
+        "feedback": "Deixe o texto mais técnico."
+    }
+
+    assert approval_router(state) == "regenerate"
 
 
 def test_graph_does_not_publish_after_human_rejection():
@@ -153,12 +172,28 @@ def test_graph_does_not_publish_after_human_rejection():
     result = graph.invoke(
         Command(
             resume={
-                "approved": False,
-                "reason": "Content rejected by user.",
+                "decision": ApprovalDecision.REJECT,
+                "feedback": "O assunto não é relevante.",
             }
         ),
         config=config,
     )
 
-    assert result["approval"]["approved"] is False
+    assert result["approval"]["decision"] == ApprovalDecision.REJECT
     assert result["publication"] is None
+
+
+def test_prepare_regeneration_updates_state():
+    state = make_initial_state()
+
+    state["approval"] = {
+        "decision": ApprovalDecision.REGENERATE,
+        "feedback": "Deixe o texto mais técnico.",
+    }
+
+    result = prepare_regeneration_node(state)
+
+    assert result["revision_feedback"] == "Deixe o texto mais técnico."
+    assert result["regeneration_count"] == 1
+    assert result["approval"] is None
+    assert result["review"] is None
