@@ -3,6 +3,7 @@ from uuid import uuid4
 from langgraph.types import Command
 
 from linkedin_ai_agent.domain.enums import ApprovalDecision, ContentType
+from linkedin_ai_agent.workflow import graph as workflow_graph
 from linkedin_ai_agent.workflow.graph import (
     approval_router, 
     build_graph, 
@@ -32,6 +33,7 @@ def make_initial_state():
 
 def test_graph_executes_successfully():
     graph = build_graph()
+
 
     config = {
         "configurable": {
@@ -197,3 +199,134 @@ def test_prepare_regeneration_updates_state():
     assert result["regeneration_count"] == 1
     assert result["approval"] is None
     assert result["review"] is None
+
+
+def test_graph_regenerates_content_and_publishes_aftes_approval(monkeypatch):
+    writer_calls = 0
+    original_writer_node = workflow_graph.writer_node
+
+    def tracked_writer_node(state):
+        nonlocal writer_calls
+        writer_calls += 1
+
+        return original_writer_node(state)
+
+    monkeypatch.setattr(
+        workflow_graph,
+        "writer_node",
+        tracked_writer_node,
+    )
+
+    graph = build_graph()
+
+    config = {
+        "configurable": {
+            "thread_id": "test-regeneration-and-approval",
+        }
+    }
+
+    # First execution: generate the initial draft.
+    initial_result = graph.invoke(
+        make_initial_state(),
+        config=config,
+    )
+
+    assert initial_result["__interrupt__"]
+    assert writer_calls == 1
+
+    # Second execution: request regeneration.
+    regeneration_result = graph.invoke(
+        Command(
+            resume={
+                "decision": ApprovalDecision.REGENERATE,
+                "feedback": "Deixe o texto mais técnico."
+            }
+        ),
+        config=config,
+    )
+
+    assert regeneration_result["__interrupt__"]
+    assert regeneration_result["regeneration_count"] == 1
+    assert regeneration_result["revision_feedback"] == ("Deixe o texto mais técnico.")
+    assert writer_calls == 2
+
+    # Third execution: approve the regenerated content.
+    final_result = graph.invoke(
+        Command(
+            resume={
+                "decision": ApprovalDecision.APPROVE,
+                "feedback": None,
+            }
+        ),
+        config=config,
+    )
+
+    assert final_result["approval"]["decision"] == ApprovalDecision.APPROVE
+    assert final_result["publication"]["published"] is True
+    assert final_result["regeneration_count"] == 1
+    assert writer_calls == 2
+
+
+def test_graph_stops_after_maximum_regenerations(monkeypatch):
+    writer_calls = 0
+    original_writer_node = workflow_graph.writer_node
+
+    def tracked_writer_node(state):
+        nonlocal writer_calls
+        writer_calls += 1
+
+        return original_writer_node(state)
+
+    monkeypatch.setattr(
+        workflow_graph,
+        "writer_node",
+        tracked_writer_node,
+    )
+
+    graph = build_graph()
+
+    config = {
+        "configurable": {
+            "thread_id": "test-maximum-regenerations",
+        }
+    }
+
+    # First execution: initial draft.
+    result = graph.invoke(
+        make_initial_state(),
+        config=config,
+    )
+
+    assert result["__interrupt__"]
+    assert writer_calls == 1
+
+    # First and Second regeneration requests.
+    for expected_count in (1, 2):
+        result = graph.invoke(
+            Command(
+                resume={
+                    "decision": ApprovalDecision.REGENERATE,
+                    "feedback": "Melhore o conteúdo.",
+                }
+            ),
+            config=config,
+        )
+
+        assert result["__interrupt__"]
+        assert result["regeneration_count"] == expected_count
+
+    # Third regeneration request: workflow musto stop.
+    result = graph.invoke(
+        Command(
+            resume={
+                "decision": ApprovalDecision.REGENERATE,
+                "feedback": "Tente novamente.",
+            }
+        ),
+        config=config,
+    )
+
+    assert result["regeneration_count"] == 2
+    assert result["publication"] is None
+    assert not result.get("__interrupt__")
+    assert writer_calls == 3
